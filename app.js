@@ -335,18 +335,141 @@ client.on('message', message => {
 });
 
 app.get("/getChat", async (req, res) => {
-  let chats = await client.getChats();
-  //console.log(chats);
-  let final = [];
-  for (const chat of chats) {
-      let pesan = await chat.fetchMessages();
-      let response = JSON.stringify(pesan);
-      let r = JSON.parse(response);
-      final.push(r);
+  if(status == "NOT READY"){
+      return res.status(500).json({
+          status: false,
+          msg: 'Whatsapp is not ready',
+          data: {}
+      });
+  }else{
+    let a = await client.getChats();
+    let chats = a.splice(0, 50);
+    //console.log(chats);
+    let final = [];
+    for (const chat of chats) {
+        let pesan = await chat.fetchMessages({limit : 100});
+        let response = JSON.stringify(pesan);
+        let r = JSON.parse(response);
+        final.push(r);
+    }
+    res.status(200).json({
+      status: true,
+      response: final
+    });
+  }  
+});
+
+app.get("/getContact", async (req, res) => {
+  if(status == "NOT READY"){
+      return res.status(500).json({
+          status: false,
+          msg: 'Whatsapp is not ready',
+          data: {}
+      });
+  }else{
+    let c = await client.getContacts();
+    let final = c;
+    //for (const contact of c) {
+    //  let r = JSON.parse(contact);
+    //  final.push(r);
+    //}
+    res.status(200).json({
+      status: true,
+      response: final
+    });
+  }  
+});
+
+app.get("/getGroup", async (req, res) => {
+  if(status == "NOT READY"){
+      return res.status(500).json({
+          status: false,
+          msg: 'Whatsapp is not ready',
+          data: {}
+      });
+  }else{
+    final = [];
+    client.getChats().then(chats => {
+      const groups = chats.filter(chat => chat.isGroup);
+
+      if (groups.length == 0) {
+        //msg.reply('You have no group yet.');
+      } else {
+        let replyMsg = '*YOUR GROUPS*\n\n';
+        groups.forEach((group, i) => {
+          let g = group.name;
+          final.push(g);
+        });
+      }
+
+      res.status(200).json({
+        status: true,
+        response: final
+      });
+    });
+    
+  }  
+});
+
+const findGroupByName = async function(name) {
+  const group = await client.getChats().then(chats => {
+    return chats.find(chat => 
+      chat.isGroup && chat.name.toLowerCase() == name.toLowerCase()
+    );
+  });
+  return group;
+}
+
+// Send message to group
+// You can use chatID or group name, yea!
+app.post('/send-group', [
+  body('id').custom((value, { req }) => {
+    if (!value && !req.body.name) {
+      throw new Error('Invalid value, you can use `id` or `name`');
+    }
+    return true;
+  }),
+  body('message').notEmpty(),
+], async (req, res) => {
+  const errors = validationResult(req).formatWith(({
+    msg
+  }) => {
+    return msg;
+  });
+
+  if (!errors.isEmpty()) {
+    return res.status(422).json({
+      status: false,
+      message: errors.mapped()
+    });
   }
-  res.status(200).json({
-    status: true,
-    response: final
+
+  let chatId = req.body.id;
+  const groupName = req.body.name;
+  const message = req.body.message;
+
+  // Find the group by name
+  if (!chatId) {
+    const group = await findGroupByName(groupName);
+    if (!group) {
+      return res.status(422).json({
+        status: false,
+        message: 'No group found with name: ' + groupName
+      });
+    }
+    chatId = group.id._serialized;
+  }
+
+  client.sendMessage(chatId, message).then(response => {
+    res.status(200).json({
+      status: true,
+      response: response
+    });
+  }).catch(err => {
+    res.status(500).json({
+      status: false,
+      response: err
+    });
   });
 });
 
